@@ -1,0 +1,50 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>frame_editor</name>
+  <version>1.0.2</version>
+  <description>The frame_editor package</description>
+
+  <!-- One maintainer tag required, multiple allowed, one person per tag -->
+  <maintainer email="frank.naegele@ipa.fraunhofer.de">ipa-frn</maintainer>
+
+
+  <!-- One license tag required, multiple allowed, one license per tag -->
+  <license>MIT</license>
+
+
+  <!-- Url tags are optional, but mutiple are allowed, one per tag -->
+  <!-- Optional attribute type can be: website, bugtracker, or repository -->
+  <url type="website">http://www.ipa.fraunhofer.de/</url>
+
+
+  <!-- Author tags are optional, mutiple are allowed, one per tag -->
+  <author email="frank.naegele@ipa.fraunhofer.de">ipa-frn</author>
+
+
+  <!-- The *_depend tags are used to specify dependencies -->
+  <!-- Dependencies can be catkin packages or system dependencies -->
+  <buildtool_depend>catkin</buildtool_depend>
+
+  <depend>interactive_markers</depend>
+  <depend>rospy</depend>
+  <depend>std_msgs</depend>
+  <depend>tf</depend>
+  <depend>visualization_msgs</depend>
+  <depend>geometry_msgs</depend>
+  <depend>dynamic_reconfigure</depend>
+  <depend>rqt_gui</depend>
+  <depend>rqt_gui_py</depend>
+
+  <build_depend>message_generation</build_depend>
+  <build_export_depend>message_runtime</build_export_depend>
+  <exec_depend>message_runtime</exec_depend>
+
+  <!-- The export tag contains other, unspecified, tags -->
+  <export>
+
+    <!-- Other tools can request additional information be placed here -->
+    <rqt_gui plugin="${prefix}/plugin.xml"/>
+
+  </export>
+
+</package>
