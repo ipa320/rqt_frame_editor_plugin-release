@@ -1,3 +1,26 @@
+## frame_editor (kinetic) - 1.0.2-1
+
+The packages in the `frame_editor` repository were released into the `kinetic` distro by running `/usr/bin/bloom-release frame_editor --track kinetic --rosdistro kinetic` on `Tue, 15 May 2018 12:26:36 -0000`
+
+The `frame_editor` package was released.
+
+Version of package(s) in repository `frame_editor`:
+
+- upstream repository: https://github.com/ipa320/rqt_frame_editor_plugin.git
+- release repository: https://github.com/ipa320/rqt_frame_editor_plugin-release.git
+- rosdistro version: `1.0.2-0`
+- old version: `1.0.2-0`
+- new version: `1.0.2-1`
+
+Versions of tools used:
+
+- bloom version: `0.6.4`
+- catkin_pkg version: `0.4.1`
+- rosdep version: `0.12.2`
+- rosdistro version: `0.6.8`
+- vcstools version: `0.1.40`
+
+
 ## frame_editor (indigo) - 1.0.1-0
 
 The packages in the `frame_editor` repository were released into the `indigo` distro by running `/usr/local/bin/bloom-release --rosdistro indigo --track indigo frame_editor --edit` on `Fri, 10 Nov 2017 13:26:24 -0000`
