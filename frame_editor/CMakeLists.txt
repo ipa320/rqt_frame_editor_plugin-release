@@ -67,6 +67,8 @@ add_service_files(
   SetFrame.srv
   SetParentFrame.srv
   CopyFrame.srv
+  LoadYaml.srv
+  SaveYaml.srv
 )
 
 ## Generate actions in the 'action' folder
