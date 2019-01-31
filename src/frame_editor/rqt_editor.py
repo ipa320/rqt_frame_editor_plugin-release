@@ -37,12 +37,10 @@ class FrameEditorGUI(ProjectPlugin, Interface):
 
         self.file_type = "YAML files(*.yaml)"
 
+        self.editor.parse_args(context.argv())
 
-        self.filename = ""
-
-        filename = self.editor.parse_args(context.argv())
-        if filename:
-            self.set_current_file(filename)
+        # Update filename display
+        self.update_current_filename()
 
 
         ## Update thread ##
@@ -76,6 +74,7 @@ class FrameEditorGUI(ProjectPlugin, Interface):
 
         #if context.serial_number() > 1:
         #    widget.setWindowTitle(widget.windowTitle() + (' (%d)' % context.serial_number()))
+        widget.setWindowTitle("frame editor")
 
 
         ## Undo View
@@ -145,6 +144,7 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         if level & 1:
             self.update_frame_list()
             self.update_tf_list()
+            self.update_current_filename()
 
         ## Update the currently selected frame
         if level & 2:

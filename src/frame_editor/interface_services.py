@@ -4,6 +4,7 @@ import copy
 import time
 
 import rospy
+import os
 
 from frame_editor.objects import *
 from frame_editor.commands import *
@@ -21,13 +22,16 @@ class FrameEditor_Services(Interface):
 
         self.editor = frame_editor
 
-        rospy.Service("align_frame", AlignFrame, self.callback_align_frame)
-        rospy.Service("edit_frame", EditFrame, self.callback_edit_frame)
-        rospy.Service("get_frame", GetFrame, self.callback_get_frame)
-        rospy.Service("remove_frame", RemoveFrame, self.callback_remove_frame)
-        rospy.Service("set_frame", SetFrame, self.callback_set_frame)
-        rospy.Service("set_parent", SetParentFrame, self.callback_set_parent_frame)
-        rospy.Service("copy_frame", CopyFrame, self.callback_copy_frame)
+        rospy.Service("~align_frame", AlignFrame, self.callback_align_frame)
+        rospy.Service("~edit_frame", EditFrame, self.callback_edit_frame)
+        rospy.Service("~get_frame", GetFrame, self.callback_get_frame)
+        rospy.Service("~remove_frame", RemoveFrame, self.callback_remove_frame)
+        rospy.Service("~set_frame", SetFrame, self.callback_set_frame)
+        rospy.Service("~set_parent", SetParentFrame, self.callback_set_parent_frame)
+        rospy.Service("~copy_frame", CopyFrame, self.callback_copy_frame)
+
+        rospy.Service("~load_yaml", LoadYaml, self.callback_load_yaml)
+        rospy.Service("~save_yaml", SaveYaml, self.callback_save_yaml)
 
 
     def callback_align_frame(self, request):
@@ -173,6 +177,33 @@ class FrameEditor_Services(Interface):
 
         return response
 
+    def callback_load_yaml(self, request):
+        print "> Request to load yaml file:'{}'".format(request.filename)
+
+        response = LoadYamlResponse()
+        try:
+            self.editor.load_file(os.path.expanduser(request.filename))
+            response.success = True
+            response.message = "file loaded"
+        except Exception as e:
+            response.success = False
+            response.message = "Exception: {}".format(str(e))
+
+        return response
+
+    def callback_save_yaml(self, request):
+        print "> Request to save yaml file to:'{}'".format(request.filename)
+
+        response = SaveYamlResponse()
+        try:
+            self.editor.save_file(os.path.expanduser(request.filename))
+            response.success = True
+            response.message = "file saved"
+        except Exception as e:
+            response.success = False
+            response.message = "Exception: {}".format(str(e))
+
+        return response
 
     def callback_copy_frame(self, request):
         print "> Request to copy frame '" + request.source_name + "' with new name '" + request.name + "' and new parent name '" + request.parent + "'"
@@ -213,16 +244,16 @@ class FrameEditor_Services(Interface):
                 else:
                     frame = self.editor.frames[request.name]
 
+                    Frame.wait_for_transform(request.source_name, request.parent, rospy.Duration(1.0))
                     if (request.parent != "") and (frame.parent != request.parent):
                         print ">> rebase"
                         self.editor.command(Command_RebaseElement(self.editor, frame, request.source_name, request.parent))
                     else:
                         print ">> align"
                         self.editor.command(Command_AlignElement(self.editor, frame, request.source_name, ['x', 'y', 'z', 'a', 'b', 'c']))
-
                     Frame.wait_for_transform(frame.parent, frame.name, rospy.Duration(1.0))
 
-            except Exception, e:
+            except Exception as e:
                 print "Error: unhandled exception", e
                 response.error_code = 9
 

@@ -3,7 +3,7 @@
 from qt_gui.plugin import Plugin
 
 from python_qt_binding import QtWidgets, QtCore, QtGui
-
+import os
 
 class ProjectPlugin(Plugin):
 
@@ -21,11 +21,12 @@ class ProjectPlugin(Plugin):
         ## Menus
         self.create_menus()
 
-        ## File
-        self.file_name = ""
-        self.set_current_file("")
-        self.load_file("") # loads empty.xml
+        ## Settings
+        self.settings = QtCore.QSettings('rqt_frame_editor', 'frame_editor')
 
+        ## File
+        self.load_file("") # loads empty.xml
+        self.update_current_filename()
 
     def create_editor(self):
         raise NotImplementedError
@@ -70,16 +71,16 @@ class ProjectPlugin(Plugin):
 
 
         ## Menu
-        file_menu = self.widget.menuBar.addMenu("&File")
-        file_menu.addAction(newAction)
-        file_menu.addAction(openAction)
-        file_menu.addAction(saveAction)
-        file_menu.addAction(saveAsAction)
-
-        edit_menu = self.widget.menuBar.addMenu("&Edit")
-
-        edit_menu.addAction(undoAction)
-        edit_menu.addAction(redoAction)
+        # file_menu = self.widget.menuBar.addMenu("&File")
+        # file_menu.addAction(newAction)
+        # file_menu.addAction(openAction)
+        # file_menu.addAction(saveAction)
+        # file_menu.addAction(saveAsAction)
+        #
+        # edit_menu = self.widget.menuBar.addMenu("&Edit")
+        #
+        # edit_menu.addAction(undoAction)
+        # edit_menu.addAction(redoAction)
 
         ## Tool bar
         tool_bar = self.widget.mainToolBar
@@ -106,22 +107,42 @@ class ProjectPlugin(Plugin):
             self.load_file("")
 
             ## Set file name to undefined
-            self.set_current_file("")
+            self.update_current_filename()
 
     def open(self):
         if self.ok_to_continue():
+
             file_name, stuff = QtWidgets.QFileDialog.getOpenFileName(self.widget,
-                "Select a file to open", ".", self.file_type)
+                "Select a file to open", self.settings.value('last_folder', ''), self.file_type)
 
             if not file_name == "":
-                self.load_file(file_name)
+                if self.editor.get_file_name() == "":
+                    self.load_file(file_name)
+                else:
+                    # Already some file loaded
+                    # Ask to add or replace
+                    print "current filename '{}'".format(self.editor.get_file_name())
+                    choice = QtWidgets.QMessageBox.question(self.widget,
+                                                           "Keep current frames?",
+                                                           "Do you want to keep frames in your list, which are not in the currently loaded file?",
+                                                            QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Yes)
+                    if choice == QtWidgets.QMessageBox.Yes:
+                        self.load_file(file_name)
+                    else:
+                        self.load_file("")
+                        self.load_file(file_name)
+
 
     def load_file(self, file_name):
         if not self.editor.load_file(file_name):
             print "ERROR LOADING FILE"
             return False
         else:
-            self.set_current_file(file_name)
+            self.update_current_filename()
+
+            if file_name:
+                self.settings.setValue('last_folder', os.path.dirname(file_name))
+                self.settings.sync()
             return True
 
     def ok_to_continue(self):
@@ -148,15 +169,15 @@ class ProjectPlugin(Plugin):
     def save(self):
         """Calls save_as or save_file
         """
-        if self.file_name == "":
+        if self.editor.get_file_name() == "":
             return self.save_as()
         else:
-            return self.save_file(self.file_name)
+            return self.save_file(self.editor.get_full_file_path())
 
     def save_as(self):
-        #file_path = QtCore.QFileInfo(self.file_name).canonicalPath()
+        #file_path = QtCore.QFileInfo(self.editor.get_file_name()).canonicalPath()
         #file_name, stuff = QtWidgets.QFileDialog.getSaveFileName(None, "Save File", file_path, self.file_type)
-        file_name, stuff = QtWidgets.QFileDialog.getSaveFileName(None, "Save File", self.file_name, self.file_type)
+        file_name, stuff = QtWidgets.QFileDialog.getSaveFileName(None, "Save File", self.editor.get_full_file_path(), self.file_type)
         if file_name == "":
             return False
         else:
@@ -169,27 +190,27 @@ class ProjectPlugin(Plugin):
             print "Saving canceled"
             return False
         else:
-            self.set_current_file(file_name)
+            self.update_current_filename()
             print "File saved"
             return True
 
     def write_file(self, file_name):
         raise NotImplementedError
 
-    def set_current_file(self, file_name):
+    def update_current_filename(self):
         ## Set clean
         self.editor.undo_stack.setClean()
         self.widget.setWindowModified(False)
 
-        ## File name
-        self.file_name = file_name
+        file_name = self.editor.get_file_name()
 
         ## Window title
         shown_name = "Untitled"
-        if not self.file_name == "":
-            shown_name = self.stripped_name(file_name)
+        if not file_name == "":
+            shown_name = file_name
             # recent files...
-        self.widget.setWindowTitle(self.tr('{} [*] - {}'.format(shown_name, "frame editor")))
+
+        self.widget.lab_file_name.setText(self.tr('{} [*] - {}'.format(shown_name, "frame editor")))
 
     def stripped_name(self, full_name):
         return QtCore.QFileInfo(full_name).fileName()
