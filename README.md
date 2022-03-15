@@ -1,3 +1,26 @@
+## frame_editor (melodic) - 1.1.0-1
+
+The packages in the `frame_editor` repository were released into the `melodic` distro by running `/usr/bin/bloom-release --rosdistro melodic --track melodic frame_editor --edit` on `Tue, 15 Mar 2022 10:11:16 -0000`
+
+The `frame_editor` package was released.
+
+Version of package(s) in repository `frame_editor`:
+
+- upstream repository: https://github.com/ipa320/rqt_frame_editor_plugin.git
+- release repository: unknown
+- rosdistro version: `null`
+- old version: `null`
+- new version: `1.1.0-1`
+
+Versions of tools used:
+
+- bloom version: `0.10.7`
+- catkin_pkg version: `0.4.24`
+- rosdep version: `0.21.0`
+- rosdistro version: `0.8.3`
+- vcstools version: `0.1.42`
+
+
 ## frame_editor (kinetic) - 1.0.4-0
 
 The packages in the `frame_editor` repository were released into the `kinetic` distro by running `/usr/bin/bloom-release -r kinetic -t kinetic frame_editor` on `Thu, 31 Jan 2019 13:12:41 -0000`
