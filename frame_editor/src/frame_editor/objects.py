@@ -11,7 +11,7 @@ import tf2_ros
 from frame_editor.constructors_geometry import *
 from frame_editor.constructors_std import *
 from frame_editor.srv import *
-import utils_tf
+from frame_editor import utils_tf
 
 from geometry_msgs.msg import Pose
 
@@ -55,7 +55,7 @@ class Frame(object):
         return ToPose(self.position, self.orientation)
 
     def print_all(self):
-        print "  {} (parent: {}) {} {}".format(self.name, self.parent, self.position, self.orientation)
+        print("  {} (parent: {}) {} {}".format(self.name, self.parent, self.position, self.orientation))
 
     def value(self, symbol):
         if symbol == 'x':
