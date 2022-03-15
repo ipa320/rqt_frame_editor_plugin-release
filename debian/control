@@ -1,0 +1,12 @@
+Source: ros-noetic-frame-editor
+Section: misc
+Priority: optional
+Maintainer: ipa-lth <lorenz.halt@ipa.fraunhofer.de>
+Build-Depends: debhelper (>= 9.0.0), ros-noetic-catkin, ros-noetic-dynamic-reconfigure, ros-noetic-geometry-msgs, ros-noetic-interactive-markers, ros-noetic-message-generation, ros-noetic-rospy, ros-noetic-rqt-gui, ros-noetic-rqt-gui-py, ros-noetic-std-msgs, ros-noetic-tf, ros-noetic-visualization-msgs
+Homepage: http://www.ipa.fraunhofer.de/
+Standards-Version: 3.9.2
+
+Package: ros-noetic-frame-editor
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, ros-noetic-dynamic-reconfigure, ros-noetic-geometry-msgs, ros-noetic-interactive-markers, ros-noetic-message-runtime, ros-noetic-qt-gui-py-common, ros-noetic-rospy, ros-noetic-rqt-gui, ros-noetic-rqt-gui-py, ros-noetic-std-msgs, ros-noetic-tf, ros-noetic-visualization-msgs
+Description: The frame_editor package
