@@ -1,3 +1,26 @@
+## frame_editor (noetic) - 1.1.1-1
+
+The packages in the `frame_editor` repository were released into the `noetic` distro by running `/usr/bin/bloom-release frame_editor --rosdistro noetic --edit` on `Thu, 19 May 2022 08:28:56 -0000`
+
+The `frame_editor` package was released.
+
+Version of package(s) in repository `frame_editor`:
+
+- upstream repository: https://github.com/ipa320/rqt_frame_editor_plugin.git
+- release repository: https://github.com/ipa320/rqt_frame_editor_plugin-release.git
+- rosdistro version: `1.1.0-1`
+- old version: `1.1.0-1`
+- new version: `1.1.1-1`
+
+Versions of tools used:
+
+- bloom version: `0.11.1`
+- catkin_pkg version: `0.5.0`
+- rosdep version: `0.21.0`
+- rosdistro version: `0.8.3`
+- vcstools version: `0.1.42`
+
+
 ## frame_editor (noetic) - 1.1.0-1
 
 The packages in the `frame_editor` repository were released into the `noetic` distro by running `/usr/bin/bloom-release --rosdistro noetic --track noetic frame_editor --edit` on `Tue, 15 Mar 2022 10:53:18 -0000`
