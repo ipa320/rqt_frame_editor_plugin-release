@@ -6,13 +6,13 @@ import math
 import rospy
 import rospkg
 import tf
-import actionlib
 
 from qt_gui_py_common.worker_thread import WorkerThread
 
 from python_qt_binding import loadUi, QtCore, QtWidgets
-from python_qt_binding.QtWidgets import QWidget
-from python_qt_binding.QtCore import Slot
+from python_qt_binding.QtWidgets import QWidget, QTreeWidgetItem, QTreeWidget, QProgressBar
+from python_qt_binding.QtCore import Slot, Qt, QTimer
+from python_qt_binding.QtGui import QColor
 
 from frame_editor.editor import Frame, FrameEditor
 from frame_editor.commands import *
@@ -25,10 +25,41 @@ from frame_editor.interface import Interface
 ## Views
 from frame_editor.interface_gui import FrameEditor_StyleWidget
 
+class LoadingTreeWidgetItem(QTreeWidgetItem):
+    def __init__(self, parent, load_time=0.5):
+        super().__init__(parent)
+        self.parent = parent
+        
+        # Create a QProgressBar to simulate loading
+        self.progress_bar = QProgressBar()
+        self.load_increments = load_time / (100/1000)
+        self.progress_bar.setRange(0, self.load_increments)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setTextVisible(False)  # Hide the text inside the progress bar
+        
+        # Set the progress bar widget to the tree item
+        self.parent.setItemWidget(self, 0, self.progress_bar)
+
+        # Add a timer to simulate progress increment
+        self.timer = QTimer(self.parent)
+        self.timer.timeout.connect(self.update_progress)
+        self.timer.start(100)  # Update every 100 ms
+
+    def update_progress(self):
+        """Update progress bar value to simulate loading."""
+        current_value = self.progress_bar.value()
+        
+        if current_value < self.progress_bar.maximum():
+            self.progress_bar.setValue(current_value + 1)
+        else:
+            self.timer.stop()  # Stop the timer when loading completes
+            self.progress_bar.setValue(0)  # Reset the progress bar or hide it
 
 class FrameEditorGUI(ProjectPlugin, Interface):
 
     signal_update = QtCore.Signal(int)
+    signal_update_tf = QtCore.Signal(bool, bool)
+    signal_load_animation = QtCore.Signal()
 
     def __init__(self, context):
         super(FrameEditorGUI, self).__init__(context)
@@ -49,12 +80,14 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         self.update_all(3)
 
 
-    def create_editor(self):
-        editor = FrameEditor()
+    def create_editor(self, context):
+        editor = FrameEditor(context)
 
         editor.observers.append(self)
 
         self.signal_update.connect(self.update_all)
+        self.signal_update_tf.connect(self.update_frame_buffer)
+        self.signal_load_animation.connect(self.set_tf_loading_animation)
 
         self._update_thread = WorkerThread(self._update_thread_run, self._update_finished)
 
@@ -71,14 +104,7 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         loadUi(ui_file, widget)
         widget.setObjectName('FrameEditorGUIUi')
 
-        #if context.serial_number() > 1:
-        #    widget.setWindowTitle(widget.windowTitle() + (' (%d)' % context.serial_number()))
         widget.setWindowTitle("frame editor")
-
-
-        ## Undo View
-        #widget.undo_frame.layout().addWidget(QtWidgets.QUndoView(self.editor.undo_stack))
-
 
         ## Views
         self.editor.init_views()
@@ -91,9 +117,10 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         widget.btn_add.clicked.connect(self.btn_add_clicked)
         widget.btn_delete.clicked.connect(self.btn_delete_clicked)
         widget.btn_duplicate.clicked.connect(self.btn_duplicate_clicked)
-        widget.list_frames.currentTextChanged.connect(self.selected_frame_changed)
-        widget.btn_refresh.clicked.connect(self.update_tf_list)
+        widget.list_frames.currentItemChanged.connect(self.selected_frame_changed)
 
+        widget.btn_refresh.clicked.connect(lambda: self.signal_update_tf.emit(True, True))
+        
         widget.btn_set_parent_rel.clicked.connect(self.btn_set_parent_rel_clicked)
         widget.btn_set_parent_abs.clicked.connect(self.btn_set_parent_abs_clicked)
         widget.btn_set_pose.clicked.connect(self.btn_set_pose_clicked)
@@ -105,6 +132,9 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         widget.btn_set_a.clicked.connect(self.btn_set_a_clicked)
         widget.btn_set_b.clicked.connect(self.btn_set_b_clicked)
         widget.btn_set_c.clicked.connect(self.btn_set_c_clicked)
+        
+        widget.searchLine.textChanged.connect(self.update_search_suggestions)   
+        widget.search_tf.textChanged.connect(self.update_tf_list)   
 
         widget.btn_reset_position_rel.clicked.connect(self.btn_reset_position_rel_clicked)
         widget.btn_reset_position_abs.clicked.connect(self.btn_reset_position_abs_clicked)
@@ -130,7 +160,7 @@ class FrameEditorGUI(ProjectPlugin, Interface):
 
     @Slot()
     def _update_finished(self):
-        print("> Shutting down")
+        rospy.loginfo("> Shutting down")
 
 
     def update(self, editor, level, elements):
@@ -139,11 +169,13 @@ class FrameEditorGUI(ProjectPlugin, Interface):
 
     @Slot(int)
     def update_all(self, level):
+        if level & 0:
+            self.update_current_filename()
+
         ## Update list widgets
         if level & 1:
             self.update_frame_list()
             self.update_tf_list()
-            self.update_current_filename()
 
         ## Update the currently selected frame
         if level & 2:
@@ -153,41 +185,193 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         if level & 4:
             self.update_fields()
 
+    def update_tf_list_search(self, search_query=""):
+        """
+        Updates the tree with items that match the search query and groups them
+        under two collapsible categories.
+        """
+        # Clear the existing items in the tree
+        self.widget.list_tf.clear()
+        
+        # Create root items for grouping
+        frame_group = QTreeWidgetItem(self.widget.list_tf)
+        frame_group.setText(0, "Frames") 
+        frame_group.setExpanded(True)  
+        
+        other_group = QTreeWidgetItem(self.widget.list_tf)
+        other_group.setText(0, "Others") 
+        other_group.setExpanded(True)  
+        
+        items = sorted(self.editor.all_frame_ids(include_temp=False))
+        # Loop through the frames and add them to the appropriate group
+        for item in items:
+            tree_item = QTreeWidgetItem()  # Create a new tree item
+            tree_item.setText(0, item)  # Set the text for the item (first column)
+            
+            # Check if the item is part of self.editor.frames.keys()
+            if item in self.editor.frames.keys():
+                group = frame_group  # Add to the 'Frames' group
+            else:
+                group = other_group  # Add to the 'Others' group
+            
+            # Apply grey styling based on the search query and filter style
+            if search_query.lower() in item.lower() or self.editor.filter_style == "grey":
+                if self.editor.filter_style == "grey":
+                    if search_query.lower() in item.lower():
+                        tree_item.setForeground(0, Qt.black)  # Set normal color for matching items
+                    else:
+                        tree_item.setForeground(0, QColor(169, 169, 169))  # Grey out non-matching items
+                group.addChild(tree_item)  # Add the item to the corresponding group
 
+        # Sort the items after adding them
+        self.widget.list_tf.sortItems(0, Qt.AscendingOrder)
+
+    def set_tf_loading_animation(self):
+        # Clear the existing items in the tree
+        self.widget.list_tf.clear()
+
+        # Add the loading animation item to the root
+        LoadingTreeWidgetItem(self.widget.list_tf, load_time=self.get_sleep_time()*0.99)  # This creates the loading item with a progress bar
+
+        self.widget.list_tf.expandAll()
+        
     @Slot()
     def update_tf_list(self):
-        self.widget.list_tf.clear()
-        self.widget.list_tf.addItems(
-            sorted(self.editor.all_frame_ids(include_temp=False)))
-
-    def update_frame_list(self):
-        items = self.editor.frames.keys()
+        """
+        Updates the displayed tree items based on the search query entered in searchLine.
+        """
+        search_query = self.widget.search_tf.text()
+        self.update_tf_list_search(search_query)
+        
+    
+    
+    #############################
+    # ## SEARCH FUNCTIONALITY
+    def update_frame_list(self, search_query=""):
+        """
+        Updates the tree with items that match the search query.
+        Group frames based on their `group` attribute, with collapsible groups.
+        Non-group frames are added without grouping or collapsibility.
+        If filter_style is 'hide', top-level items are hidden only if they do not match the search query.
+        """
+        # Clear the existing items in the tree
         self.widget.list_frames.clear()
-        self.widget.list_frames.addItems(items)
-        self.widget.list_frames.sortItems()
 
+        # Get the frame names (or keys) from self.editor.frames
+        items = sorted(self.editor.frames.keys())  # Sorting the items
+        
+        # Dictionary to hold the group items, to ensure only one root per group
+        group_list = {}
+
+        # Loop through the frames to create group root items
+        for element in items:
+            group = self.editor.frames[element].group
+            if group != "":  # If the frame has a group
+                if group not in group_list:  # Only create the group root item once
+                    frame_group = QTreeWidgetItem(self.widget.list_frames)
+                    frame_group.setText(0, group)  # Set the group name
+                    frame_group.setExpanded(True)  # Make the group expanded by default
+                    frame_group.setFlags(frame_group.flags() & ~Qt.ItemIsSelectable)
+                    group_list[group] = frame_group
+
+        # Loop through the frames and add them to the appropriate group or main list
+        for item in items:
+            tree_item = QTreeWidgetItem() 
+            tree_item.setText(0, item)
+            tree_item.setFlags(tree_item.flags() | Qt.ItemIsSelectable)
+
+            # Check if the frame has a group
+            group = self.editor.frames[item].group
+            if group != "":  # If the frame belongs to a group
+                # Add the frame as a child item of the respective group
+                group_item = group_list[group]
+            else:  # If it doesn't belong to any group
+                # Just add the frame as a root item without grouping
+                group_item = self.widget.list_frames
+
+            
+            # Apply grey styling based on the search query and filter style
+            match_found = search_query.lower() in item.lower()  # Check if the item matches the search query
+            
+
+            if match_found or self.editor.filter_style == "grey":
+                if self.editor.filter_style == "grey":
+                    if match_found:
+                        tree_item.setForeground(0, Qt.black)  # Set normal color for matching items
+                    else:
+                        tree_item.setForeground(0, QColor(169, 169, 169))  # Grey out non-matching items
+
+                # If filter_style is 'hide', skip adding top-level items that don't match the search query
+                if self.editor.filter_style == "hide" and group_item == self.widget.list_frames and not match_found:
+                    continue  # Skip adding the top-level item if it doesn't match the search query
+
+                # Add the tree item to the appropriate group or directly to the list
+                if isinstance(group_item, QTreeWidgetItem):  # Ensure group_item is a QTreeWidgetItem
+                    group_item.addChild(tree_item)  # Add to group
+                else:
+                    self.widget.list_frames.addTopLevelItem(tree_item)  # Add to main list directly
+
+        # Sort the items after adding them
+        self.widget.list_frames.sortItems(0, Qt.AscendingOrder)
+
+
+      
+    def update_search_suggestions(self):
+        """
+        Updates the displayed tree items based on the search query entered in searchLine.
+        """
+        search_query = self.widget.searchLine.text()
+        self.update_frame_list(search_query)
+    #############################
 
     def update_active_frame(self):
         if not self.editor.active_frame:
             self.old_selected = ""
             self.widget.list_frames.setCurrentItem(None)
             self.widget.box_edit.setEnabled(False)
-            return # deselect and quit
+            return  # Deselect and quit
 
         self.widget.box_edit.setEnabled(True)
 
         name = self.editor.active_frame.name
         if name == self.old_selected:
-            return # no change
+            return  # No change
 
-        ## Select item in list
-        items = self.widget.list_frames.findItems(name, QtCore.Qt.MatchExactly)
-        self.widget.list_frames.setCurrentItem(items[0])
+        # Search for the item by name in both top-level and child items
+        found_item = None
 
-        self.update_fields()
+        # First, search in top-level items
+        top_level_items = self.widget.list_frames.findItems(name, Qt.MatchExactly)
+        
+        # If not found at the top level, search lower
+        if not top_level_items:
+            for i in range(self.widget.list_frames.topLevelItemCount()):
+                top_item = self.widget.list_frames.topLevelItem(i)
+                found_item = self.find_item_in_children(top_item, name)
+                if found_item:
+                    break
+        else:
+            found_item = top_level_items[0]
+
+        if found_item:
+            # Set the found item as the current item
+            self.widget.list_frames.setCurrentItem(found_item)
+            self.update_fields()
 
         self.old_selected = name
 
+
+    def find_item_in_children(self, parent_item, name):
+        """
+        Recursively search for the item in the children of a given parent item.
+        """
+        # Loop through all child items of the parent item
+        for i in range(parent_item.childCount()):
+            child_item = parent_item.child(i)
+            if child_item.text(0) == name:
+                return child_item  # Return the item if it matches
+
+        return None  # Return None if no match is found in this branch
 
     @Slot()
     def update_fields(self):
@@ -238,14 +422,23 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         self.widget.combo_style.setCurrentIndex(self.widget.combo_style.findText(f.style))
 
 
-    @Slot(str)
-    def selected_frame_changed(self, name):
+    @Slot(QTreeWidgetItem, QTreeWidgetItem)
+    def selected_frame_changed(self, item, previous):
+        # 'item' is the currently selected item (QTreeWidgetItem)
+        if item is None:
+            return
+
+        name = item.text(0)  # Get the text of the selected item
+        
+        if name not in self.editor.frames: 
+            return
+        
         if name == "":
             return
 
+        # Perform the selection logic as before
         if not self.editor.active_frame or (self.editor.active_frame.name != name):
             self.editor.command(Command_SelectElement(self.editor, self.editor.frames[name]))
-
 
     ## BUTTONS ##
     ##
@@ -257,52 +450,73 @@ class FrameEditorGUI(ProjectPlugin, Interface):
     def clear_all(self):
         self.editor.command(Command_ClearAll(self.editor))
 
+    def get_valid_frame_name(self, window_title, default_name="my_frame"):
+
+        existing_tf_frames = set(self.editor.all_frame_ids())
+        existing_editor_frames = set(self.editor.all_editor_frame_ids())
+
+        name, ok = QtWidgets.QInputDialog.getText(self.widget, window_title, "Name:", QtWidgets.QLineEdit.Normal, default_name);
+
+        # allow recreating if frame was published by frameditor node originally
+        while ok and name in existing_editor_frames or (name in existing_tf_frames and not Frame.was_published_by_frameeditor(name)):
+            name, ok = QtWidgets.QInputDialog.getText(self.widget, window_title, "Name (must be unique):", QtWidgets.QLineEdit.Normal, default_name)
+        if not ok:
+            return None
+        return name
+
+        
     @Slot(bool)
     def btn_add_clicked(self, checked):
-        # Get a unique frame name
-        existing_frames = set(self.editor.all_frame_ids())
-
-        name, ok = QtWidgets.QInputDialog.getText(self.widget, "Add New Frame", "Name:", QtWidgets.QLineEdit.Normal, "my_frame");
-
-        while ok and name in existing_frames:
-            name, ok = QtWidgets.QInputDialog.getText(self.widget, "Add New Frame", "Name (must be unique):", QtWidgets.QLineEdit.Normal, "my_frame")
-        if not ok:
+        
+        name = self.get_valid_frame_name("Add New Frame")
+        if not name:
             return
 
-        if not existing_frames:
+        available_parents = self.editor.all_frame_ids(include_temp=False)
+        if not available_parents:
             available_parents = ["world"]
-        else:
-            available_parents = self.editor.all_frame_ids(include_temp=False)
-        parent, ok = QtWidgets.QInputDialog.getItem(self.widget, "Add New Frame", "Parent Name:", sorted(available_parents))
 
+        parent, ok = QtWidgets.QInputDialog.getItem(self.widget, "Add New Frame", "Parent Name:", sorted(available_parents))
 
         if not ok or parent == "":
             return
 
         self.editor.command(Command_AddElement(self.editor, Frame(name, parent=parent)))
-
-
+        self.signal_update_tf.emit(False, False)
 
     @Slot(bool)
     def btn_duplicate_clicked(self, checked):
         item = self.widget.list_frames.currentItem()
         if not item:
             return
-        source_name = item.text()
+        source_name = item.text(0)
         parent_name = self.editor.frames[source_name].parent
 
-        # Get a unique frame name
-        existing_frames = set(self.editor.all_frame_ids())
-
-        name, ok = QtWidgets.QInputDialog.getText(self.widget, "Duplicate Frame", "Name:", QtWidgets.QLineEdit.Normal, source_name);
-
-        while ok and name in existing_frames:
-            name, ok = QtWidgets.QInputDialog.getText(self.widget, "Duplicate Frame", "Name (must be unique):", QtWidgets.QLineEdit.Normal, source_name)
-        if not ok:
+        name = self.get_valid_frame_name("Duplicate Frame", default_name=source_name)
+        if not name:
             return
 
         self.editor.command(Command_CopyElement(self.editor, name, source_name, parent_name))
+        self.signal_update_tf.emit(False, False)
 
+    def get_sleep_time(self):
+        return max(5.0 / self.editor.hz, 0.1)
+
+    @Slot(bool, bool)
+    def update_frame_buffer(self, animation=False, reset_buffer=True):
+        if animation:
+            self.signal_load_animation.emit()
+        sleep_time = self.get_sleep_time()*1000/2  # Time takes time in ms
+        if reset_buffer:
+            self.timer_clear_buffer = QTimer(self)
+            self.timer_clear_buffer.setSingleShot(True)  # Run only once
+            self.timer_clear_buffer.timeout.connect(Frame.tf_buffer.clear)
+            self.timer_clear_buffer.start(sleep_time)
+        
+        self.timer_update_list = QTimer(self)
+        self.timer_update_list.setSingleShot(True)  # Run only once
+        self.timer_update_list.timeout.connect(self.update_tf_list)
+        self.timer_update_list.start(sleep_time*2)  
 
 
     @Slot(bool)
@@ -310,9 +524,9 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         item = self.widget.list_frames.currentItem()
         if not item:
             return
-        self.editor.command(Command_RemoveElement(self.editor, self.editor.frames[item.text()]))
-
-
+        self.editor.command(Command_RemoveElement(self.editor, self.editor.frames[item.text(0)]))
+        self.signal_update_tf.emit(True, True)
+        
     ## PARENTING ##
     ##
     @Slot(bool)
@@ -328,10 +542,10 @@ class FrameEditorGUI(ProjectPlugin, Interface):
         if not parent:
             return # none selected
 
-        if parent.text() == self.editor.active_frame.name:
+        if parent.text(0) == self.editor.active_frame.name:
             return # you can't be your own parent
 
-        self.editor.command(Command_SetParent(self.editor, self.editor.active_frame, parent.text(), keep_absolute))
+        self.editor.command(Command_SetParent(self.editor, self.editor.active_frame, parent.text(0), keep_absolute))
 
 
     ## SET BUTTONS ##
@@ -373,7 +587,7 @@ class FrameEditorGUI(ProjectPlugin, Interface):
             return # none selected
 
         frame = self.editor.active_frame
-        self.editor.command(Command_AlignElement(self.editor, frame, source.text(), mode))
+        self.editor.command(Command_AlignElement(self.editor, frame, source.text(0), mode))
 
 
     ## RESET BUTTONS ##
