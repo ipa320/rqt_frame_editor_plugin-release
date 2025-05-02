@@ -4,6 +4,7 @@ from qt_gui.plugin import Plugin
 
 from python_qt_binding import QtWidgets, QtCore, QtGui
 import os
+import rospy
 
 class ProjectPlugin(Plugin):
 
@@ -11,7 +12,7 @@ class ProjectPlugin(Plugin):
         super(ProjectPlugin, self).__init__(context)
 
         ## Editor
-        self.editor = self.create_editor()
+        self.editor = self.create_editor(context)
         self.editor.undo_stack.cleanChanged.connect(self.clean_changed)
 
         ## Main widget
@@ -28,7 +29,7 @@ class ProjectPlugin(Plugin):
         self.load_file("") # loads empty.xml
         self.update_current_filename()
 
-    def create_editor(self):
+    def create_editor(self, context):
         raise NotImplementedError
 
     def create_main_widget(self):
@@ -121,13 +122,15 @@ class ProjectPlugin(Plugin):
                 else:
                     # Already some file loaded
                     # Ask to add or replace
-                    print("current filename '{}'".format(self.editor.get_file_name()))
+                    rospy.logwarn("current filename '{}'".format(self.editor.get_file_name()))
                     choice = QtWidgets.QMessageBox.question(self.widget,
                                                            "Keep current frames?",
                                                            "Do you want to keep frames in your list, which are not in the currently loaded file?",
                                                             QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No, QtWidgets.QMessageBox.Yes)
                     if choice == QtWidgets.QMessageBox.Yes:
                         self.load_file(file_name)
+                        # trigger asterisk (content actually changed)
+                        self.clean_changed(False)
                     else:
                         self.load_file("")
                         self.load_file(file_name)
@@ -135,7 +138,7 @@ class ProjectPlugin(Plugin):
 
     def load_file(self, file_name):
         if not self.editor.load_file(file_name):
-            print("ERROR LOADING FILE")
+            rospy.logerr("ERROR LOADING FILE")
             return False
         else:
             self.update_current_filename()
@@ -187,36 +190,46 @@ class ProjectPlugin(Plugin):
 
     def save_file(self, file_name):
         if not self.write_file(file_name):
-            print("Saving canceled")
+            rospy.logwarn("Saving canceled")
             return False
         else:
             self.update_current_filename()
-            print("File saved")
+            rospy.loginfo("File saved")
             return True
 
     def write_file(self, file_name):
         raise NotImplementedError
 
-    def update_current_filename(self):
-        ## Set clean
-        self.editor.undo_stack.setClean()
-        self.widget.setWindowModified(False)
-
+    def get_shown_name(self):
         file_name = self.editor.get_file_name()
 
         ## Window title
         shown_name = "Untitled"
         if not file_name == "":
             shown_name = file_name
-            # recent files...
+        
+        return shown_name
 
-        self.widget.lab_file_name.setText(self.tr('{} [*] - {}'.format(shown_name, "frame editor")))
+    def update_current_filename(self):
+        ## Set clean
+        self.editor.undo_stack.setClean()
+        self.widget.setWindowModified(False)
+
+        ## Window title
+        shown_name = self.get_shown_name()
+
+        self.widget.lab_file_name.setText(self.tr('{} - {}'.format(shown_name, "frame editor")))
 
     def stripped_name(self, full_name):
         return QtCore.QFileInfo(full_name).fileName()
 
     def clean_changed(self, is_clean):
         self.widget.setWindowModified(not is_clean)
+
+        # set file name label
+        modified_identifier = "*" if self.widget.isWindowModified else ""
+        shown_name = self.get_shown_name()
+        self.widget.lab_file_name.setText(self.tr('{}{} - {}'.format(shown_name, modified_identifier, "frame editor")))
 
 
 
@@ -227,6 +240,10 @@ class ProjectPlugin(Plugin):
 
         ## Ask for permission to close
         if self.widget.isWindowModified():
+            if self.editor.get_file_name() != "":
+                autosave_path = self.editor.get_full_file_path()+".autosave"
+                self.save_file(autosave_path)
+                autosaved = True
             reply = QtWidgets.QMessageBox.warning(self.widget, "frame editor",
                 "The file has been modified.\nDo you want to save your changes before exiting (Save As...)?",
                 QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.Default,
@@ -234,6 +251,8 @@ class ProjectPlugin(Plugin):
 
             if reply == QtWidgets.QMessageBox.Yes:
                 self.save_as()
+            if autosaved:
+                os.remove(autosave_path)
         # unregister interfaces
 
 
